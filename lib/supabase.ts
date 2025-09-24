@@ -37,6 +37,7 @@ export type Database = {
         Row: {
           id: string
           email: string
+          password_hash: string
           name: string
           role: 'super_admin' | 'admin' | 'teacher' | 'student'
           avatar_url?: string
@@ -51,6 +52,7 @@ export type Database = {
         Insert: {
           id?: string
           email: string
+          password_hash: string
           name: string
           role: 'super_admin' | 'admin' | 'teacher' | 'student'
           avatar_url?: string
@@ -65,6 +67,7 @@ export type Database = {
         Update: {
           id?: string
           email?: string
+          password_hash?: string
           name?: string
           role?: 'super_admin' | 'admin' | 'teacher' | 'student'
           avatar_url?: string

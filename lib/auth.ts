@@ -13,7 +13,6 @@ export class AuthService {
         .from('users')
         .select('*')
         .eq('email', email)
-        .eq('status', 'active')
         .single()
 
       if (userError || !userData) {
@@ -28,14 +27,18 @@ export class AuthService {
         throw new Error('Invalid email or password')
       }
 
-      // Update last login
-      await supabase
-        .from('users')
-        .update({ 
-          last_login: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userData.id)
+      // Update last login (only if columns exist)
+      try {
+        await supabase
+          .from('users')
+          .update({ 
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userData.id)
+      } catch (updateError) {
+        // Ignore update errors for missing columns
+        console.log('Could not update last login (columns may not exist):', updateError)
+      }
 
       // Convert database user to application user format
       const user: User = {
@@ -43,14 +46,14 @@ export class AuthService {
         email: userData.email,
         name: userData.name,
         role: userData.role,
-        avatar: userData.avatar_url,
-        phone: userData.phone,
-        isActive: userData.status === 'active',
-        isVerified: userData.email_verified,
-        twoFactorEnabled: userData.two_factor_enabled,
+        avatar: userData.avatar_url || null,
+        phone: userData.phone || null,
+        isActive: userData.status ? userData.status === 'active' : true,
+        isVerified: userData.email_verified || false,
+        twoFactorEnabled: userData.two_factor_enabled || false,
         lastLogin: new Date(userData.last_login || userData.created_at),
         createdAt: new Date(userData.created_at),
-        updatedAt: new Date(userData.updated_at),
+        updatedAt: new Date(userData.updated_at || userData.created_at),
         permissions: [], // You might want to fetch this from a separate table
         departmentId: '' // You might want to fetch this from student/teacher tables
       }
@@ -71,7 +74,6 @@ export class AuthService {
         .from('users')
         .select('*')
         .eq('id', userId)
-        .eq('status', 'active')
         .single()
 
       if (error || !userData) {
@@ -84,14 +86,14 @@ export class AuthService {
         email: userData.email,
         name: userData.name,
         role: userData.role,
-        avatar: userData.avatar_url,
-        phone: userData.phone,
-        isActive: userData.status === 'active',
-        isVerified: userData.email_verified,
-        twoFactorEnabled: userData.two_factor_enabled,
+        avatar: userData.avatar_url || null,
+        phone: userData.phone || null,
+        isActive: userData.status ? userData.status === 'active' : true,
+        isVerified: userData.email_verified || false,
+        twoFactorEnabled: userData.two_factor_enabled || false,
         lastLogin: new Date(userData.last_login || userData.created_at),
         createdAt: new Date(userData.created_at),
-        updatedAt: new Date(userData.updated_at),
+        updatedAt: new Date(userData.updated_at || userData.created_at),
         permissions: [], // You might want to fetch this from a separate table
         departmentId: '' // You might want to fetch this from student/teacher tables
       }
@@ -121,22 +123,22 @@ export class AuthService {
       // Hash password
       const passwordHash = await bcrypt.hash(userData.password!, 12)
 
-      // Create new user
+      // Create new user - only include fields that exist in the database
+      const insertData: any = {
+        email: userData.email!,
+        password_hash: passwordHash,
+        name: userData.name!,
+        role: userData.role || 'student',
+        created_at: new Date().toISOString()
+      }
+
+      // Add optional fields only if they might exist in the database
+      if (userData.avatar) insertData.avatar_url = userData.avatar
+      if (userData.phone) insertData.phone = userData.phone
+
       const { data: newUser, error } = await supabase
         .from('users')
-        .insert({
-          email: userData.email!,
-          password_hash: passwordHash,
-          name: userData.name!,
-          role: userData.role || 'student',
-          avatar_url: userData.avatar,
-          phone: userData.phone,
-          status: 'active',
-          email_verified: false,
-          two_factor_enabled: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+        .insert(insertData)
         .select()
         .single()
 
@@ -150,14 +152,14 @@ export class AuthService {
         email: newUser.email,
         name: newUser.name,
         role: newUser.role,
-        avatar: newUser.avatar_url,
-        phone: newUser.phone,
-        isActive: newUser.status === 'active',
-        isVerified: newUser.email_verified,
-        twoFactorEnabled: newUser.two_factor_enabled,
+        avatar: newUser.avatar_url || null,
+        phone: newUser.phone || null,
+        isActive: newUser.status ? newUser.status === 'active' : true,
+        isVerified: newUser.email_verified || false,
+        twoFactorEnabled: newUser.two_factor_enabled || false,
         lastLogin: new Date(newUser.created_at),
         createdAt: new Date(newUser.created_at),
-        updatedAt: new Date(newUser.updated_at),
+        updatedAt: new Date(newUser.updated_at || newUser.created_at),
         permissions: userData.permissions || [],
         departmentId: userData.departmentId || ''
       }

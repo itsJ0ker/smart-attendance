@@ -29,55 +29,11 @@ import DashboardLayout from '../../../components/layout/DashboardLayout'
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
+import ClassManagement from '../../../components/teacher/ClassManagement'
+import QRGenerator from '../../../components/teacher/QRGenerator'
 import { useAuth } from '../../../hooks/useAuth'
-
-// Mock data for teacher dashboard
-const mockTeacherData = {
-  todayClasses: [
-    { 
-      id: 1, 
-      name: 'Computer Science 101', 
-      time: '09:00 AM - 10:30 AM', 
-      room: 'Room 201',
-      enrolled: 45,
-      present: 42,
-      status: 'completed',
-      qrGenerated: true
-    },
-    { 
-      id: 2, 
-      name: 'Data Structures', 
-      time: '11:00 AM - 12:30 PM', 
-      room: 'Room 305',
-      enrolled: 38,
-      present: 35,
-      status: 'active',
-      qrGenerated: true
-    },
-    { 
-      id: 3, 
-      name: 'Web Development', 
-      time: '02:00 PM - 03:30 PM', 
-      room: 'Lab 101',
-      enrolled: 32,
-      present: 0,
-      status: 'upcoming',
-      qrGenerated: false
-    },
-  ],
-  weeklyStats: {
-    totalClasses: 12,
-    averageAttendance: 89.2,
-    totalStudents: 115,
-    presentStudents: 103
-  },
-  recentAttendance: [
-    { id: 1, student: 'Alex Johnson', course: 'CS 101', time: '09:15 AM', status: 'present', location: 'Room 201' },
-    { id: 2, student: 'Sarah Davis', course: 'Data Structures', time: '11:05 AM', status: 'present', location: 'Room 305' },
-    { id: 3, student: 'Mike Wilson', course: 'CS 101', time: '09:12 AM', status: 'present', location: 'Room 201' },
-    { id: 4, student: 'Emma Brown', course: 'Data Structures', time: '11:03 AM', status: 'present', location: 'Room 305' },
-  ]
-}
+import teacherService, { TeacherStats, TodayClass, RecentAttendance } from '../../../services/teacherService'
+import LoadingSpinner from '../../../components/ui/LoadingSpinner'
 
 const ClassCard = ({ classData }: { classData: any }) => {
   const [qrVisible, setQrVisible] = useState(false)
@@ -237,37 +193,70 @@ const AttendanceItem = ({ attendance }: { attendance: any }) => (
 export default function TeacherDashboard() {
   const { user } = useAuth()
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
+  const [teacherStats, setTeacherStats] = useState<TeacherStats | null>(null)
+  const [todayClasses, setTodayClasses] = useState<TodayClass[]>([])
+  const [recentAttendance, setRecentAttendance] = useState<RecentAttendance[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  const stats = [
+  const fetchTeacherData = async () => {
+    if (!user?.id) return
+
+    try {
+      setRefreshing(true)
+      
+      const [statsResponse, classesResponse, attendanceResponse] = await Promise.all([
+        teacherService.getTeacherStats(user.id),
+        teacherService.getTodayClasses(user.id),
+        teacherService.getRecentAttendance(user.id, 5)
+      ])
+
+      setTeacherStats(statsResponse)
+      setTodayClasses(classesResponse)
+      setRecentAttendance(attendanceResponse)
+      
+    } catch (error) {
+      console.error('Failed to fetch teacher data:', error)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchTeacherData()
+  }, [user?.id])
+
+  const stats = teacherStats ? [
     {
       title: 'Today\'s Classes',
-      value: mockTeacherData.todayClasses.length,
+      value: teacherStats.todayClasses,
       change: '+1 from yesterday',
       icon: <BookOpen className="w-6 h-6" />,
       color: 'primary' as const
     },
     {
       title: 'Total Students',
-      value: mockTeacherData.weeklyStats.totalStudents,
+      value: teacherStats.totalStudents,
       change: '+5 this week',
       icon: <Users className="w-6 h-6" />,
       color: 'success' as const
     },
     {
       title: 'Average Attendance',
-      value: `${mockTeacherData.weeklyStats.averageAttendance}%`,
+      value: `${teacherStats.averageAttendance}%`,
       change: '+2.3% this week',
       icon: <TrendingUp className="w-6 h-6" />,
       color: 'success' as const
     },
     {
       title: 'Active QR Codes',
-      value: mockTeacherData.todayClasses.filter(c => c.qrGenerated && c.status === 'active').length,
+      value: teacherStats.activeQRCodes,
       change: 'Real-time',
       icon: <QrCode className="w-6 h-6" />,
       color: 'warning' as const
     }
-  ]
+  ] : []
 
   return (
     <DashboardLayout>
@@ -352,18 +341,33 @@ export default function TeacherDashboard() {
               </div>
             </CardHeader>
             <CardBody>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mockTeacherData.todayClasses.map((classData, index) => (
-                  <motion.div
-                    key={classData.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.5 + index * 0.1 }}
-                  >
-                    <ClassCard classData={classData} />
-                  </motion.div>
-                ))}
-              </div>
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="animate-pulse">
+                      <div className="bg-gray-200 dark:bg-gray-700 h-32 rounded-lg"></div>
+                    </div>
+                  ))}
+                </div>
+              ) : todayClasses.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {todayClasses.map((classData, index) => (
+                    <motion.div
+                      key={classData.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.5 + index * 0.1 }}
+                    >
+                      <ClassCard classData={classData} />
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-500 dark:text-gray-400">No classes scheduled for today</p>
+                </div>
+              )}
             </CardBody>
           </Card>
         </motion.div>
@@ -426,9 +430,30 @@ export default function TeacherDashboard() {
                 </div>
               </CardHeader>
               <CardBody className="space-y-1">
-                {mockTeacherData.recentAttendance.map((attendance) => (
-                  <AttendanceItem key={attendance.id} attendance={attendance} />
-                ))}
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="flex items-center space-x-3 p-3 animate-pulse">
+                      <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                      <div className="flex-1">
+                        <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded mb-1"></div>
+                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-2/3"></div>
+                      </div>
+                      <div className="text-right">
+                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-16 mb-1"></div>
+                        <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-12"></div>
+                      </div>
+                    </div>
+                  ))
+                ) : recentAttendance.length > 0 ? (
+                  recentAttendance.map((attendance) => (
+                    <AttendanceItem key={attendance.id} attendance={attendance} />
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <UserCheck className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500 dark:text-gray-400">No recent attendance</p>
+                  </div>
+                )}
                 <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
                   <Button variant="outline" size="sm" fullWidth icon={<Eye className="w-4 h-4" />}>
                     View Detailed Reports

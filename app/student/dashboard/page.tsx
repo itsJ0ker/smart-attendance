@@ -27,13 +27,17 @@ import {
   Search,
   GraduationCap,
   Users,
-  Star
+  Star,
+  Loader2
 } from 'lucide-react'
 import DashboardLayout from '../../../components/layout/DashboardLayout'
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
+import QRScanner from '../../../components/student/QRScanner'
+import AttendanceHistory from '../../../components/student/AttendanceHistory'
 import { useAuth } from '../../../hooks/useAuth'
+import studentService, { StudentStats, StudentSchedule } from '../../../services/studentService'
 
 // Mock data for student dashboard
 const mockStudentData = {
@@ -285,41 +289,324 @@ const AchievementCard = ({ achievement }: { achievement: any }) => (
 export default function StudentDashboard() {
   const { user } = useAuth()
   const [selectedPeriod, setSelectedPeriod] = useState('week')
+  const [activeTab, setActiveTab] = useState('overview')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [studentStats, setStudentStats] = useState<StudentStats | null>(null)
+  const [studentSchedule, setStudentSchedule] = useState<StudentSchedule | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  // Load student data
+  useEffect(() => {
+    if (user?.id) {
+      loadStudentData()
+    }
+  }, [user?.id])
+
+  const loadStudentData = async () => {
+    if (!user?.id) return
+
+    try {
+      setLoading(true)
+      setError(null)
+
+      const [stats, schedule] = await Promise.all([
+        studentService.getStudentStats(user.id),
+        studentService.getStudentSchedule(user.id)
+      ])
+
+      setStudentStats(stats)
+      setStudentSchedule(schedule)
+    } catch (err) {
+      console.error('Failed to load student data:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await loadStudentData()
+    setRefreshing(false)
+  }
 
   const stats = [
     {
       title: 'Attendance Rate',
-      value: `${mockStudentData.attendanceStats.attendanceRate}%`,
-      change: '+2.3% this month',
+      value: studentStats ? `${studentStats.overall.attendanceRate}%` : '0%',
+      change: studentStats ? `${studentStats.weekly.total} this week` : 'Loading...',
       icon: <Target className="w-6 h-6" />,
       color: 'success' as const
     },
     {
       title: 'Classes Attended',
-      value: `${mockStudentData.attendanceStats.attended}/${mockStudentData.attendanceStats.totalClasses}`,
-      change: '+3 this week',
+      value: studentStats ? `${studentStats.overall.totalAttended}/${studentStats.overall.totalLectures}` : '0/0',
+      change: studentStats ? `${studentStats.weekly.present + studentStats.weekly.late} this week` : 'Loading...',
       icon: <CheckCircle className="w-6 h-6" />,
       color: 'primary' as const
     },
     {
       title: 'Today\'s Classes',
-      value: mockStudentData.todaySchedule.length,
-      change: '2 completed',
+      value: studentSchedule ? studentSchedule.todaysSchedule.length : 0,
+      change: studentSchedule ? `${studentSchedule.statistics.attendedToday} completed` : 'Loading...',
       icon: <BookOpen className="w-6 h-6" />,
       color: 'warning' as const
     },
     {
       title: 'Achievements',
-      value: mockStudentData.achievements.filter(a => a.earned).length,
-      change: '+1 this week',
+      value: studentStats ? studentStats.achievements.length : 0,
+      change: studentStats && studentStats.streaks.current > 0 ? `${studentStats.streaks.current} day streak` : 'No streak',
       icon: <Award className="w-6 h-6" />,
       color: 'success' as const
     }
   ]
 
+  const tabs = [
+    { id: 'overview', name: 'Overview', icon: '📊' },
+    { id: 'scanner', name: 'QR Scanner', icon: '📱' },
+    { id: 'history', name: 'Attendance History', icon: '📋' }
+  ]
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'overview':
+        return (
+          <div className="space-y-8">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {stats.map((stat, index) => (
+                <motion.div
+                  key={stat.title}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: index * 0.1 }}
+                >
+                  <Card className="hover:shadow-lg transition-shadow duration-200">
+                    <CardBody className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            {stat.title}
+                          </p>
+                          <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                            {stat.value}
+                          </p>
+                          <p className="text-sm text-success-600 flex items-center mt-1">
+                            <TrendingUp className="w-4 h-4 mr-1" />
+                            {stat.change}
+                          </p>
+                        </div>
+                        <div className={`w-12 h-12 bg-${stat.color}-500 rounded-lg flex items-center justify-center text-white`}>
+                          {stat.icon}
+                        </div>
+                      </div>
+                    </CardBody>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Today's Schedule */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.4 }}
+            >
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                      Today's Schedule
+                    </h3>
+                    <div className="flex items-center space-x-2">
+                      <Button variant="ghost" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
+                        Refresh
+                      </Button>
+                      <Button variant="ghost" size="sm" icon={<Calendar className="w-4 h-4" />}>
+                        Full Schedule
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardBody>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {studentSchedule && studentSchedule.todaysSchedule.length > 0 ? (
+                      studentSchedule.todaysSchedule.map((scheduleItem, index) => (
+                        <motion.div
+                          key={scheduleItem.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.5, delay: 0.5 + index * 0.1 }}
+                        >
+                          <Card className="hover:shadow-lg transition-all duration-200">
+                            <CardBody className="p-6">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                                    {scheduleItem.course.name}
+                                  </h3>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center mb-1">
+                                    <Clock className="w-4 h-4 mr-1" />
+                                    {new Date(scheduleItem.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(scheduleItem.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                  </p>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center mb-1">
+                                    <MapPin className="w-4 h-4 mr-1" />
+                                    {scheduleItem.location || 'Location TBD'}
+                                  </p>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center">
+                                    <BookOpen className="w-4 h-4 mr-1" />
+                                    {scheduleItem.course.code}
+                                  </p>
+                                </div>
+                                <Badge 
+                                  variant={
+                                    scheduleItem.status === 'present' || scheduleItem.status === 'late' ? 'success' :
+                                    scheduleItem.status === 'absent' || scheduleItem.status === 'missed' ? 'error' : 'warning'
+                                  }
+                                  icon={
+                                    scheduleItem.status === 'present' || scheduleItem.status === 'late' ? <CheckCircle className="w-4 h-4" /> :
+                                    scheduleItem.status === 'absent' || scheduleItem.status === 'missed' ? <XCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />
+                                  }
+                                >
+                                  {scheduleItem.status === 'present' ? 'Present' : 
+                                   scheduleItem.status === 'late' ? 'Late' :
+                                   scheduleItem.status === 'absent' ? 'Absent' : 
+                                   scheduleItem.status === 'missed' ? 'Missed' : 'Upcoming'}
+                                </Badge>
+                              </div>
+                              {scheduleItem.attendance && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  Marked at: {new Date(scheduleItem.attendance.markedAt).toLocaleTimeString()}
+                                </div>
+                              )}
+                              {scheduleItem.status === 'upcoming' || scheduleItem.status === 'ongoing' ? (
+                                <div className="mt-4">
+                                  <Button 
+                                    variant="primary" 
+                                    size="sm" 
+                                    icon={<QrCode className="w-4 h-4" />}
+                                    onClick={() => setActiveTab('scanner')}
+                                    className="w-full"
+                                  >
+                                    Mark Attendance
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </CardBody>
+                          </Card>
+                        </motion.div>
+                      ))
+                    ) : (
+                      <div className="col-span-2 text-center py-8">
+                        <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-gray-600 dark:text-gray-400">No classes scheduled for today</p>
+                      </div>
+                    )}
+                  </div>
+                </CardBody>
+              </Card>
+            </motion.div>
+
+            {/* Recent Activity and Achievements */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Recent Attendance */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.8 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        Recent Attendance
+                      </h3>
+                      <Button variant="ghost" size="sm" icon={<Eye className="w-4 h-4" />}>
+                        View All
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardBody>
+                    <div className="space-y-2">
+                      {mockStudentData.recentAttendance.slice(0, 5).map((attendance) => (
+                        <AttendanceItem key={attendance.id} attendance={attendance} />
+                      ))}
+                    </div>
+                  </CardBody>
+                </Card>
+              </motion.div>
+
+              {/* Achievements */}
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.8 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                        Achievements
+                      </h3>
+                      <Button variant="ghost" size="sm" icon={<Star className="w-4 h-4" />}>
+                        View All
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardBody>
+                    <div className="grid grid-cols-2 gap-4">
+                      {mockStudentData.achievements.map((achievement) => (
+                        <AchievementCard key={achievement.id} achievement={achievement} />
+                      ))}
+                    </div>
+                  </CardBody>
+                </Card>
+              </motion.div>
+            </div>
+          </div>
+        )
+      case 'scanner':
+        return <QRScanner studentId={user?.id} onAttendanceMarked={handleRefresh} />
+      case 'history':
+        return <AttendanceHistory studentId={user?.id} period={selectedPeriod} />
+      default:
+        return null
+    }
+  }
+
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+            <p className="text-gray-600 dark:text-gray-400">Loading your dashboard...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <AlertCircle className="w-8 h-8 mx-auto mb-4 text-red-600" />
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={loadStudentData} variant="primary">
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
   return (
     <DashboardLayout>
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -340,202 +627,51 @@ export default function StudentDashboard() {
               <option value="month">This Month</option>
               <option value="semester">This Semester</option>
             </select>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              icon={refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </Button>
             <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
               Export
             </Button>
-            <Button variant="primary" size="sm" icon={<QrCode className="w-4 h-4" />}>
+            <Button 
+              variant="primary" 
+              size="sm" 
+              icon={<QrCode className="w-4 h-4" />}
+              onClick={() => setActiveTab('scanner')}
+            >
               Quick Scan
             </Button>
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map((stat, index) => (
-            <motion.div
-              key={stat.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-            >
-              <Card className="hover:shadow-lg transition-shadow duration-200">
-                <CardBody className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                        {stat.title}
-                      </p>
-                      <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-                        {stat.value}
-                      </p>
-                      <p className="text-sm text-success-600 flex items-center mt-1">
-                        <TrendingUp className="w-4 h-4 mr-1" />
-                        {stat.change}
-                      </p>
-                    </div>
-                    <div className={`w-12 h-12 bg-${stat.color}-500 rounded-lg flex items-center justify-center text-white`}>
-                      {stat.icon}
-                    </div>
-                  </div>
-                </CardBody>
-              </Card>
-            </motion.div>
-          ))}
+        {/* Tab Navigation */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <span className="mr-2">{tab.icon}</span>
+                {tab.name}
+              </button>
+            ))}
+          </nav>
         </div>
 
-        {/* Today's Schedule */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-        >
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Today's Schedule
-                </h3>
-                <div className="flex items-center space-x-2">
-                  <Button variant="ghost" size="sm" icon={<RefreshCw className="w-4 h-4" />}>
-                    Refresh
-                  </Button>
-                  <Button variant="ghost" size="sm" icon={<Calendar className="w-4 h-4" />}>
-                    Full Schedule
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {mockStudentData.todaySchedule.map((classData, index) => (
-                  <motion.div
-                    key={classData.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, delay: 0.5 + index * 0.1 }}
-                  >
-                    <ClassCard classData={classData} />
-                  </motion.div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
-
-        {/* Analytics and Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Attendance Analytics */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.8 }}
-          >
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                    Attendance Trends
-                  </h3>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm" icon={<BarChart3 className="w-4 h-4" />}>
-                      Bar
-                    </Button>
-                    <Button variant="ghost" size="sm" icon={<PieChart className="w-4 h-4" />}>
-                      Pie
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardBody>
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Overall Progress</span>
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {mockStudentData.attendanceStats.attendanceRate}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-success-500 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${mockStudentData.attendanceStats.attendanceRate}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="h-48 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <div className="text-center">
-                    <BarChart3 className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-500 dark:text-gray-400">
-                      Weekly attendance chart
-                    </p>
-                    <p className="text-sm text-gray-400 dark:text-gray-500">
-                      Chart integration pending
-                    </p>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          </motion.div>
-
-          {/* Recent Attendance */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.9 }}
-          >
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                    Recent Attendance
-                  </h3>
-                  <Button variant="ghost" size="sm">
-                    View All
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardBody className="space-y-1">
-                {mockStudentData.recentAttendance.map((attendance) => (
-                  <AttendanceItem key={attendance.id} attendance={attendance} />
-                ))}
-              </CardBody>
-            </Card>
-          </motion.div>
-        </div>
-
-        {/* Achievements */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 1.0 }}
-        >
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
-                  <Award className="w-5 h-5 mr-2" />
-                  Achievements
-                </h3>
-                <Badge variant="primary" size="sm">
-                  {mockStudentData.achievements.filter(a => a.earned).length} / {mockStudentData.achievements.length}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {mockStudentData.achievements.map((achievement, index) => (
-                  <motion.div
-                    key={achievement.id}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ duration: 0.3, delay: 1.1 + index * 0.1 }}
-                  >
-                    <AchievementCard achievement={achievement} />
-                  </motion.div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-        </motion.div>
+        {/* Tab Content */}
+        {renderTabContent()}
       </div>
     </DashboardLayout>
   )

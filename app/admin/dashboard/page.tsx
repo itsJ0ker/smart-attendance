@@ -31,9 +31,11 @@ import DashboardLayout from '../../../components/layout/DashboardLayout'
 import { Card, CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
+import UserManagement from '../../../components/admin/UserManagement'
+import Analytics from '../../../components/admin/Analytics'
 import { useAuth } from '../../../hooks/useAuth'
 import { AttendanceRecord, User, AnomalyLog } from '../../../types'
-import dashboardService, { DashboardActivity, DashboardAnomaly } from '../../../lib/services/dashboardService'
+import { adminService, AdminStats, SystemActivity } from '../../../services/adminService'
 
 const StatCard = ({ 
   title, 
@@ -90,115 +92,77 @@ const StatCard = ({
   )
 }
 
-const ActivityItem = ({ activity }: { activity: DashboardActivity }) => (
-  <div className="flex items-center space-x-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors">
-    <div className="w-10 h-10 bg-success-100 dark:bg-success-900 rounded-full flex items-center justify-center">
-      {activity.avatar_url ? (
-        <img 
-          src={activity.avatar_url} 
-          alt={activity.student}
-          className="w-10 h-10 rounded-full object-cover"
-        />
-      ) : (
-        <UserCheck className="w-5 h-5 text-success-600 dark:text-success-400" />
-      )}
-    </div>
-    <div className="flex-1 min-w-0">
-      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-        {activity.student}
-      </p>
-      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-        {activity.course}
-      </p>
-      {activity.lecture_title && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
-          {activity.lecture_title}
-        </p>
-      )}
-    </div>
-    <div className="text-right">
-      <p className="text-sm text-gray-900 dark:text-gray-100">{activity.time}</p>
-      <Badge variant="success" size="sm">Present</Badge>
-    </div>
-  </div>
-)
-
-const AnomalyItem = ({ anomaly, onResolve }: { anomaly: DashboardAnomaly, onResolve?: (id: string) => void }) => {
-  const severityColors = {
-    low: 'warning',
-    medium: 'warning',
-    high: 'error',
-    critical: 'error'
-  } as const
-
-  const severityIcons = {
-    low: <Eye className="w-4 h-4" />,
-    medium: <AlertTriangle className="w-4 h-4" />,
-    high: <Shield className="w-4 h-4" />,
-    critical: <Shield className="w-4 h-4" />
+const ActivityItem = ({ activity }: { activity: SystemActivity }) => {
+  const getActivityIcon = () => {
+    switch (activity.type) {
+      case 'attendance':
+        return <UserCheck className="w-5 h-5 text-success-600 dark:text-success-400" />
+      case 'user_created':
+        return <Users className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+      case 'course_created':
+        return <BookOpen className="w-5 h-5 text-warning-600 dark:text-warning-400" />
+      default:
+        return <Activity className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+    }
   }
 
-  const handleResolve = async () => {
-    if (onResolve) {
-      onResolve(anomaly.id)
+  const getActivityColor = () => {
+    switch (activity.type) {
+      case 'attendance':
+        return 'bg-success-100 dark:bg-success-900'
+      case 'user_created':
+        return 'bg-primary-100 dark:bg-primary-900'
+      case 'course_created':
+        return 'bg-warning-100 dark:bg-warning-900'
+      default:
+        return 'bg-gray-100 dark:bg-gray-900'
+    }
+  }
+
+  const getBadgeVariant = () => {
+    switch (activity.type) {
+      case 'attendance':
+        return 'success'
+      case 'user_created':
+        return 'primary'
+      case 'course_created':
+        return 'warning'
+      default:
+        return 'default'
     }
   }
 
   return (
-    <div className="flex items-start space-x-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors">
-      <div className="w-8 h-8 bg-error-100 dark:bg-error-900 rounded-full flex items-center justify-center flex-shrink-0">
-        {anomaly.avatar_url ? (
-          <img 
-            src={anomaly.avatar_url} 
-            alt={anomaly.student}
-            className="w-8 h-8 rounded-full object-cover"
-          />
-        ) : (
-          <Shield className="w-4 h-4 text-error-600 dark:text-error-400" />
-        )}
+    <div className="flex items-center space-x-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors">
+      <div className={`w-10 h-10 ${getActivityColor()} rounded-full flex items-center justify-center`}>
+        {getActivityIcon()}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center space-x-2 mb-1">
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-            {anomaly.student}
-          </p>
-          <Badge 
-            variant={severityColors[anomaly.severity]} 
-            size="sm"
-            icon={severityIcons[anomaly.severity]}
-          >
-            {anomaly.severity.toUpperCase()}
-          </Badge>
-        </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          {anomaly.message}
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+          {activity.description}
         </p>
-        <div className="flex items-center justify-between mt-2">
-          <p className="text-xs text-gray-500 dark:text-gray-500">
-            {anomaly.time} • {anomaly.date}
-          </p>
-          {!anomaly.resolved && onResolve && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleResolve}
-              className="text-xs"
-            >
-              Resolve
-            </Button>
-          )}
-        </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+          {activity.details}
+        </p>
+      </div>
+      <div className="text-right">
+        <p className="text-sm text-gray-900 dark:text-gray-100">{activity.time}</p>
+        <Badge variant={getBadgeVariant() as any} size="sm">
+          {activity.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+        </Badge>
       </div>
     </div>
   )
 }
 
+
+
 export default function AdminDashboard() {
   const { user } = useAuth()
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'analytics'>('overview')
   const [timeRange, setTimeRange] = useState('today')
-  const [dashboardData, setDashboardData] = useState<any>(null)
-  const [recentActivity, setRecentActivity] = useState<DashboardActivity[]>([])
-  const [anomalies, setAnomalies] = useState<DashboardAnomaly[]>([])
+  const [adminStats, setAdminStats] = useState<AdminStats | null>(null)
+  const [recentActivity, setRecentActivity] = useState<SystemActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -207,20 +171,17 @@ export default function AdminDashboard() {
       setRefreshing(true)
       
       // Fetch all dashboard data in parallel
-      const [statsResponse, activityResponse, anomaliesResponse] = await Promise.all([
-        dashboardService.getFormattedStats(timeRange),
-        dashboardService.getRecentActivity(5),
-        dashboardService.getAnomalies(5, false)
+      const [statsResponse, activityResponse] = await Promise.all([
+        adminService.getStats(timeRange),
+        adminService.getSystemActivity()
       ])
 
-      setDashboardData(statsResponse)
-      
-      if (activityResponse.success && activityResponse.data) {
-        setRecentActivity(activityResponse.data)
+      if (statsResponse.success) {
+        setAdminStats(statsResponse.data)
       }
       
-      if (anomaliesResponse.success && anomaliesResponse.data) {
-        setAnomalies(anomaliesResponse.data)
+      if (activityResponse.success) {
+        setRecentActivity(activityResponse.data)
       }
       
     } catch (error) {
@@ -231,54 +192,42 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleResolveAnomaly = async (anomalyId: string) => {
-    try {
-      const response = await dashboardService.resolveAnomaly(anomalyId, true)
-      if (response.success) {
-        // Remove the resolved anomaly from the list
-        setAnomalies(prev => prev.filter(a => a.id !== anomalyId))
-      }
-    } catch (error) {
-      console.error('Failed to resolve anomaly:', error)
-    }
-  }
-
   useEffect(() => {
     fetchDashboardData()
   }, [timeRange])
 
-  const stats = dashboardData ? [
+  const stats = adminStats ? [
     {
       title: 'Total Students',
-      value: dashboardData.totalStudents.toLocaleString(),
-      change: '+12 this week',
+      value: adminStats.totalStudents.toLocaleString(),
+      change: adminStats.studentsTrend,
       icon: <GraduationCap className="w-6 h-6" />,
       color: 'primary' as const,
       trend: 'up' as const
     },
     {
       title: 'Present Today',
-      value: dashboardData.presentToday.toLocaleString(),
-      change: `${dashboardData.attendanceRate}% rate`,
+      value: adminStats.presentToday.toLocaleString(),
+      change: `${adminStats.attendanceRate}% rate`,
       icon: <UserCheck className="w-6 h-6" />,
       color: 'success' as const,
-      trend: dashboardData.attendanceTrend === 'up' ? 'up' as const : 
-             dashboardData.attendanceTrend === 'down' ? 'down' as const : 'neutral' as const
+      trend: adminStats.attendanceTrend === 'up' ? 'up' as const : 
+             adminStats.attendanceTrend === 'down' ? 'down' as const : 'neutral' as const
     },
     {
       title: 'Absent Today',
-      value: dashboardData.absentToday.toLocaleString(),
-      change: dashboardData.attendanceTrend === 'up' ? '-5% from yesterday' : 
-              dashboardData.attendanceTrend === 'down' ? '+5% from yesterday' : 'No change',
+      value: adminStats.absentToday.toLocaleString(),
+      change: adminStats.attendanceTrend === 'up' ? 'Improving' : 
+              adminStats.attendanceTrend === 'down' ? 'Declining' : 'Stable',
       icon: <UserX className="w-6 h-6" />,
       color: 'warning' as const,
-      trend: dashboardData.attendanceTrend === 'up' ? 'down' as const : 
-             dashboardData.attendanceTrend === 'down' ? 'up' as const : 'neutral' as const
+      trend: adminStats.attendanceTrend === 'up' ? 'down' as const : 
+             adminStats.attendanceTrend === 'down' ? 'up' as const : 'neutral' as const
     },
     {
       title: 'Active Teachers',
-      value: dashboardData.activeTeachers.toString(),
-      change: '+2 this month',
+      value: adminStats.activeTeachers.toString(),
+      change: adminStats.teachersTrend,
       icon: <Users className="w-6 h-6" />,
       color: 'primary' as const,
       trend: 'up' as const
@@ -299,37 +248,89 @@ export default function AdminDashboard() {
             </p>
           </div>
           <div className="flex items-center space-x-3 mt-4 sm:mt-0">
-            <select 
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-              className="form-select"
-              disabled={loading}
-            >
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="semester">This Semester</option>
-            </select>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />}
-              onClick={fetchDashboardData}
-              disabled={refreshing}
-            >
-              Refresh
-            </Button>
-            <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
-              Export
-            </Button>
+            {activeTab === 'overview' && (
+              <>
+                <select 
+                  value={timeRange}
+                  onChange={(e) => setTimeRange(e.target.value)}
+                  className="form-select"
+                  disabled={loading}
+                >
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="semester">This Semester</option>
+                </select>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  icon={<RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />}
+                  onClick={fetchDashboardData}
+                  disabled={refreshing}
+                >
+                  Refresh
+                </Button>
+                <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />}>
+                  Export
+                </Button>
+              </>
+            )}
             <Button variant="primary" size="sm" icon={<Settings className="w-4 h-4" />}>
               Settings
             </Button>
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Tab Navigation */}
+        <div className="border-b border-gray-200 dark:border-gray-700">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'overview'
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <BarChart3 className="w-4 h-4" />
+                <span>Overview</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'users'
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Users className="w-4 h-4" />
+                <span>User Management</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('analytics')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'analytics'
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <PieChart className="w-4 h-4" />
+                <span>Analytics</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'overview' && (
+          <>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {loading ? (
             // Loading skeleton
             Array.from({ length: 4 }).map((_, index) => (
@@ -486,7 +487,7 @@ export default function AdminDashboard() {
             </Card>
           </motion.div>
 
-          {/* Security Anomalies */}
+          {/* System Health */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -496,52 +497,44 @@ export default function AdminDashboard() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
-                    <Shield className="w-5 h-5 mr-2" />
-                    Security Alerts
+                    <Activity className="w-5 h-5 mr-2" />
+                    System Health
                   </h3>
-                  <Badge variant="error" size="sm">
-                    {anomalies.length}
+                  <Badge variant="success" size="sm">
+                    Healthy
                   </Badge>
                 </div>
               </CardHeader>
-              <CardBody className="space-y-1">
-                {loading ? (
-                  // Loading skeleton for anomalies
-                  Array.from({ length: 3 }).map((_, index) => (
-                    <div key={index} className="flex items-start space-x-3 p-3 animate-pulse">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-24"></div>
-                          <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-16"></div>
-                        </div>
-                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full mb-2"></div>
-                        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-20"></div>
-                      </div>
-                    </div>
-                  ))
-                ) : anomalies.length > 0 ? (
-                  anomalies.map((anomaly) => (
-                    <AnomalyItem 
-                      key={anomaly.id} 
-                      anomaly={anomaly} 
-                      onResolve={handleResolveAnomaly}
-                    />
-                  ))
-                ) : (
-                  <div className="text-center py-8">
-                    <Shield className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-gray-500 dark:text-gray-400">No security alerts</p>
+              <CardBody>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Database</span>
+                    <Badge variant="success" size="sm">Online</Badge>
                   </div>
-                )}
-                <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <Button variant="outline" size="sm" fullWidth>
-                    View Security Dashboard
-                  </Button>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">API Services</span>
+                    <Badge variant="success" size="sm">Running</Badge>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">QR Generation</span>
+                    <Badge variant="success" size="sm">Active</Badge>
+                  </div>
+                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <Button variant="outline" size="sm" fullWidth>
+                      View System Status
+                    </Button>
+                  </div>
                 </div>
               </CardBody>
             </Card>
           </motion.div>
         </div>
+          </>
+        )}
+
+        {activeTab === 'users' && <UserManagement />}
+        
+        {activeTab === 'analytics' && <Analytics />}
       </div>
     </DashboardLayout>
   )
